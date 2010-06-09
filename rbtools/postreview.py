@@ -2071,7 +2071,6 @@ class GitClient(SCMClient):
                 if m:
                     uuid = m.group(1)
                     self.type = "svn"
-                    self.upstream_branch = options.parent_branch or 'master'
 
                     return SvnRepositoryInfo(path=path, base_path=base_path,
                                              uuid=uuid,
@@ -2114,16 +2113,14 @@ class GitClient(SCMClient):
         if merge.startswith(HEADS_PREFIX):
             merge = merge[len(HEADS_PREFIX):]
 
-        self.upstream_branch = ''
-
         if remote and remote != '.' and merge:
-            self.upstream_branch = '%s/%s' % (remote, merge)
+            upstream_branch = '%s/%s' % (remote, merge)
 
-        self.upstream_branch, origin_url = self.get_origin(self.upstream_branch,
+        upstream_branch, origin_url = self.get_origin(self.upstream_branch,
                                                        True)
 
         if not origin_url or origin_url.startswith("fatal:"):
-            self.upstream_branch, origin_url = self.get_origin()
+            upstream_branch, origin_url = self.get_origin()
 
         url = origin_url.rstrip('/')
         if url:
@@ -2182,6 +2179,19 @@ class GitClient(SCMClient):
 
         return None
 
+    def get_merge_base(self):
+	svn_info = execute(["git", "svn", "info"], split_lines=True)
+
+	base_rev = None
+	for l in svn_info:
+	    if not l.startswith("Revision: "):
+		continue
+	    base_rev = int(l.split(' ')[1])
+	    break
+	hash = execute(["git", "svn", "find-rev", "r%d" % base_rev])
+	hash = hash.strip()
+	return hash
+
     def diff(self, args):
         """
         Performs a diff across all modified files in the branch, taking into
@@ -2189,8 +2199,7 @@ class GitClient(SCMClient):
         """
         parent_branch = options.parent_branch
 
-        self.merge_base = execute(["git", "merge-base", self.upstream_branch,
-                                   self.head_ref]).strip()
+        self.merge_base = self.get_merge_base()
 
         if parent_branch:
             diff_lines = self.make_diff(parent_branch)
